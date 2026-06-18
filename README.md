@@ -1,4 +1,4 @@
-# DMS
+# DMS.Backend
 
 Phase 1 foundation for a Distribution Management System built with ASP.NET Core, EF Core, PostgreSQL, and Clean Architecture.
 
