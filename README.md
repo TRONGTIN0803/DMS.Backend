@@ -17,10 +17,10 @@ Phase 1 foundation for a Distribution Management System built with ASP.NET Core,
 docker compose up -d postgres
 ```
 
-Default connection string:
+Default connection string format:
 
 ```text
-Host=localhost;Port=5432;Database=dms;Username=dms_app;Password=dms_password
+Host=localhost;Port=5432;Database=<database-name>;Username=<database-user>;Password=<database-password>
 ```
 
 ## Expected next commands
@@ -35,14 +35,14 @@ dotnet run --project src/DMS.Api
 
 ## Run locally on Windows
 
-PostgreSQL local dev credentials:
+PostgreSQL local dev connection values:
 
 ```text
 Host=localhost
 Port=5432
-Database=dms
-Username=dms_app
-Password=dms_password
+Database=<database-name>
+Username=<database-user>
+Password=<database-password>
 ```
 
 Run the API:
