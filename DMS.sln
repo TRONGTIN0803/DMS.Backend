@@ -1,0 +1,41 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.Domain", "src\DMS.Domain\DMS.Domain.csproj", "{0DF95247-6D51-4B2A-A7E7-07DF33558B74}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.Application", "src\DMS.Application\DMS.Application.csproj", "{9DDAE077-69EA-4013-A449-054071F6160A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.Infrastructure", "src\DMS.Infrastructure\DMS.Infrastructure.csproj", "{0873E4B8-55E8-494A-92BA-C3B1D1F753EC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.Api", "src\DMS.Api\DMS.Api.csproj", "{8BFA1223-41D9-4D9F-BBBF-5689D68EBEAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.Shared", "src\DMS.Shared\DMS.Shared.csproj", "{1FEAF249-A8A1-4FB1-A7F2-38E5607508D8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.UnitTests", "tests\DMS.UnitTests\DMS.UnitTests.csproj", "{0C01565A-01A3-48D4-9240-B58409D48B37}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DMS.IntegrationTests", "tests\DMS.IntegrationTests\DMS.IntegrationTests.csproj", "{96326D61-0F35-4B97-A6EF-95D8A51D69D2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0DF95247-6D51-4B2A-A7E7-07DF33558B74}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0DF95247-6D51-4B2A-A7E7-07DF33558B74}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9DDAE077-69EA-4013-A449-054071F6160A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9DDAE077-69EA-4013-A449-054071F6160A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0873E4B8-55E8-494A-92BA-C3B1D1F753EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0873E4B8-55E8-494A-92BA-C3B1D1F753EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BFA1223-41D9-4D9F-BBBF-5689D68EBEAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BFA1223-41D9-4D9F-BBBF-5689D68EBEAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1FEAF249-A8A1-4FB1-A7F2-38E5607508D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1FEAF249-A8A1-4FB1-A7F2-38E5607508D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C01565A-01A3-48D4-9240-B58409D48B37}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C01565A-01A3-48D4-9240-B58409D48B37}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{96326D61-0F35-4B97-A6EF-95D8A51D69D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{96326D61-0F35-4B97-A6EF-95D8A51D69D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+EndGlobal
+

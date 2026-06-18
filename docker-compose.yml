@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dms-postgres
+    environment:
+      POSTGRES_DB: dms
+      POSTGRES_USER: dms_app
+      POSTGRES_PASSWORD: dms_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - dms_postgres_data:/var/lib/postgresql/data
+      - ./database/001_phase1_initial_schema.sql:/docker-entrypoint-initdb.d/001_phase1_initial_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dms_app -d dms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dms_postgres_data:
