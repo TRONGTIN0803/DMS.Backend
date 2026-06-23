@@ -2,7 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace DMS.Api.Middleware;
 
-public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+public sealed class ExceptionHandlingMiddleware(
+    RequestDelegate next,
+    ILogger<ExceptionHandlingMiddleware> logger,
+    IHostEnvironment environment)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -18,7 +21,9 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "Unexpected server error",
-                Detail = "An unexpected error occurred while processing the request.",
+                Detail = environment.IsDevelopment()
+                    ? exception.Message
+                    : "An unexpected error occurred while processing the request.",
                 Instance = context.Request.Path
             };
 
@@ -27,4 +32,3 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
         }
     }
 }
-

@@ -1,4 +1,6 @@
 using DMS.Application.Abstractions;
+using DMS.Application.Orders;
+using DMS.Infrastructure.Orders;
 using DMS.Infrastructure.Persistence;
 using DMS.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +26,7 @@ public static class DependencyInjection
             provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        services.AddScoped<IOrderNumberGenerator, PostgresOrderNumberGenerator>();
 
         return services;
     }

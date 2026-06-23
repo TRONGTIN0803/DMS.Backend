@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using DMS.Application.Auth;
+using DMS.Application.Orders;
+using DMS.Domain.Enums;
 using DMS.Infrastructure.Persistence;
 using DMS.Infrastructure.Persistence.Seed;
 using FluentAssertions;
@@ -71,6 +73,38 @@ public sealed class ApiIntegrationTests : IAsyncLifetime
         refreshed!.AccessToken.Should().NotBeNullOrWhiteSpace();
         refreshed.RefreshToken.Should().NotBeNullOrWhiteSpace();
         refreshed.RefreshToken.Should().NotBe(login.RefreshToken);
+    }
+
+    [Fact]
+    public async Task Authenticated_admin_can_create_sales_order_draft()
+    {
+        var client = CreateClient();
+        var login = await LoginAsync(client);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+        var request = new CreateSalesOrderRequest(
+            CompanyId: 1,
+            CustomerId: 1,
+            SalesPersonId: 1,
+            SiteId: 1,
+            OrderDate: null,
+            Note: "Integration draft order",
+            Lines: [new CreateSalesOrderLineRequest(ItemId: 1, Quantity: 2m)]);
+
+        var response = await client.PostAsJsonAsync("/api/v1/sales-orders", request);
+        var order = await response.Content.ReadFromJsonAsync<SalesOrderResponse>();
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        order.Should().NotBeNull();
+        order!.OrderNo.Should().StartWith($"SO-{DateTimeOffset.UtcNow:yyyy}-");
+        order.Status.Should().Be(SalesOrderStatus.Draft);
+        order.SubTotal.Should().Be(200000m);
+        order.VatAmount.Should().Be(16000m);
+        order.GrandTotal.Should().Be(216000m);
+        order.Lines.Should().ContainSingle();
+        order.Lines[0].UnitPrice.Should().Be(100000m);
+        order.Lines[0].VatRate.Should().Be(8m);
     }
 
     public async Task InitializeAsync()
