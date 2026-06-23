@@ -1,0 +1,126 @@
+Table SYS_Company {
+  Id bigint [pk, increment]
+  Code varchar(20) [not null, unique]
+  Name varchar(200) [not null]
+  TaxCode varchar(20)
+  Address text
+  Phone varchar(30)
+  Email varchar(200)
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table SYS_User {
+  Id bigint [pk, increment]
+  UserName varchar(100) [not null, unique]
+  PasswordHash varchar(500) [not null]
+  FullName varchar(200) [not null]
+  Role varchar(50) [not null]
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table SYS_RefreshToken {
+  Id bigint [pk, increment]
+  UserId bigint [not null]
+  TokenHash varchar(128) [not null, unique]
+  ExpiresAt timestamptz [not null]
+  RevokedAt timestamptz
+  ReplacedByTokenHash varchar(128)
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table AR_SalesPerson {
+  Id bigint [pk, increment]
+  Code varchar(20) [not null, unique]
+  Name varchar(200) [not null]
+  CompanyId bigint [not null]
+  Phone varchar(30)
+  Email varchar(200)
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table AR_Customer {
+  Id bigint [pk, increment]
+  Code varchar(20) [not null, unique]
+  Name varchar(200) [not null]
+  CompanyId bigint [not null]
+  SalesPersonId bigint
+  Address text
+  Phone varchar(30)
+  CustomerType smallint [not null, default: 1]
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table IN_Site {
+  Id bigint [pk, increment]
+  Code varchar(20) [not null, unique]
+  Name varchar(200) [not null]
+  CompanyId bigint [not null]
+  Address text
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table IN_Item {
+  Id bigint [pk, increment]
+  Code varchar(20) [not null, unique]
+  Name varchar(200) [not null]
+  Unit varchar(20) [not null]
+  Barcode varchar(50)
+  Price numeric(18,2) [not null]
+  VatRate numeric(5,2) [not null]
+  IsActive boolean [not null, default: true]
+  CreatedAt timestamptz [not null]
+  CreatedBy varchar(100)
+  UpdatedAt timestamptz
+  UpdatedBy varchar(100)
+  IsDeleted boolean [not null, default: false]
+}
+
+Table IN_Inventory {
+  Id bigint [pk, increment]
+  SiteId bigint [not null]
+  ItemId bigint [not null]
+  Quantity numeric(18,3) [not null]
+  ReservedQuantity numeric(18,3) [not null, default: 0]
+  xmin xid [not null]
+
+  indexes {
+    (SiteId, ItemId) [unique]
+  }
+}
+
+Ref: AR_SalesPerson.CompanyId > SYS_Company.Id
+Ref: AR_Customer.CompanyId > SYS_Company.Id
+Ref: AR_Customer.SalesPersonId > AR_SalesPerson.Id [delete: set null]
+Ref: IN_Site.CompanyId > SYS_Company.Id
+Ref: IN_Inventory.SiteId > IN_Site.Id
+Ref: IN_Inventory.ItemId > IN_Item.Id
+Ref: SYS_RefreshToken.UserId > SYS_User.Id [delete: cascade]
