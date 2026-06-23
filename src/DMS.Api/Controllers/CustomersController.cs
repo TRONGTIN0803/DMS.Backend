@@ -1,17 +1,23 @@
+using DMS.Api.Auth;
 using DMS.Application.Catalog;
+using DMS.Application.Abstractions;
 using DMS.Domain.Entities;
-using DMS.Infrastructure.Persistence;
 using DMS.Shared;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
 [Route("api/v1/customers")]
 public sealed class CustomersController(
-    ApplicationDbContext dbContext,
+    IRepository<Customer> customersRepository,
+    IRepository<Company> companiesRepository,
+    IRepository<SalesPerson> salesPeopleRepository,
+    IUnitOfWork unitOfWork,
     IValidator<CreateCustomerRequest> createValidator,
     IValidator<UpdateCustomerRequest> updateValidator) : ControllerBase
 {
@@ -20,7 +26,7 @@ public sealed class CustomersController(
     {
         var page = query.SafePage;
         var pageSize = query.SafePageSize;
-        IQueryable<Customer> customersQuery = dbContext.Customers.AsNoTracking().Include(x => x.Company).Include(x => x.SalesPerson);
+        IQueryable<Customer> customersQuery = customersRepository.Query().AsNoTracking().Include(x => x.Company).Include(x => x.SalesPerson);
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -60,7 +66,7 @@ public sealed class CustomersController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<CustomerResponse>> GetCustomer(long id, CancellationToken cancellationToken)
     {
-        var customer = await dbContext.Customers
+        var customer = await customersRepository.Query()
             .AsNoTracking()
             .Include(x => x.Company)
             .Include(x => x.SalesPerson)
@@ -83,6 +89,7 @@ public sealed class CustomersController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<CustomerResponse>> CreateCustomer(CreateCustomerRequest request, CancellationToken cancellationToken)
     {
         var validation = await createValidator.ValidateAsync(request, cancellationToken);
@@ -98,7 +105,7 @@ public sealed class CustomersController(
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.Customers.AnyAsync(x => x.Code == request.Code, cancellationToken))
+        if (await customersRepository.Query().AnyAsync(x => x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Customer code already exists.");
             return ValidationProblem(ModelState);
@@ -115,14 +122,15 @@ public sealed class CustomersController(
             CustomerType = request.CustomerType
         };
 
-        dbContext.Customers.Add(customer);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        customersRepository.Add(customer);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetCustomer(customer.Id, cancellationToken);
         return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, response.Value);
     }
 
     [HttpPut("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<CustomerResponse>> UpdateCustomer(long id, UpdateCustomerRequest request, CancellationToken cancellationToken)
     {
         var validation = await updateValidator.ValidateAsync(request, cancellationToken);
@@ -131,7 +139,7 @@ public sealed class CustomersController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        var customer = await dbContext.Customers.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var customer = await customersRepository.GetByIdAsync(id, cancellationToken);
         if (customer is null)
         {
             return NotFound();
@@ -144,7 +152,7 @@ public sealed class CustomersController(
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.Customers.AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
+        if (await customersRepository.Query().AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Customer code already exists.");
             return ValidationProblem(ModelState);
@@ -159,34 +167,35 @@ public sealed class CustomersController(
         customer.CustomerType = request.CustomerType;
         customer.IsActive = request.IsActive;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetCustomer(customer.Id, cancellationToken);
         return Ok(response.Value);
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<IActionResult> DeleteCustomer(long id, CancellationToken cancellationToken)
     {
-        var customer = await dbContext.Customers.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var customer = await customersRepository.GetByIdAsync(id, cancellationToken);
         if (customer is null)
         {
             return NotFound();
         }
 
         customer.IsDeleted = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 
     private async Task<(string Field, string Message)?> ValidateRelationshipsAsync(long companyId, long? salesPersonId, CancellationToken cancellationToken)
     {
-        if (!await dbContext.Companies.AnyAsync(x => x.Id == companyId, cancellationToken))
+        if (!await companiesRepository.Query().AnyAsync(x => x.Id == companyId, cancellationToken))
         {
             return (nameof(companyId), "Company does not exist.");
         }
 
-        if (salesPersonId is not null && !await dbContext.SalesPeople.AnyAsync(x => x.Id == salesPersonId, cancellationToken))
+        if (salesPersonId is not null && !await salesPeopleRepository.Query().AnyAsync(x => x.Id == salesPersonId, cancellationToken))
         {
             return (nameof(salesPersonId), "Sales person does not exist.");
         }

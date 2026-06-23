@@ -1,17 +1,21 @@
+using DMS.Api.Auth;
 using DMS.Application.Catalog;
+using DMS.Application.Abstractions;
 using DMS.Domain.Entities;
-using DMS.Infrastructure.Persistence;
 using DMS.Shared;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
 [Route("api/v1/companies")]
 public sealed class CompaniesController(
-    ApplicationDbContext dbContext,
+    IRepository<Company> companiesRepository,
+    IUnitOfWork unitOfWork,
     IValidator<CreateCompanyRequest> createValidator,
     IValidator<UpdateCompanyRequest> updateValidator) : ControllerBase
 {
@@ -20,7 +24,7 @@ public sealed class CompaniesController(
     {
         var page = query.SafePage;
         var pageSize = query.SafePageSize;
-        var companiesQuery = dbContext.Companies.AsNoTracking();
+        var companiesQuery = companiesRepository.Query().AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -49,7 +53,7 @@ public sealed class CompaniesController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<CompanyResponse>> GetCompany(long id, CancellationToken cancellationToken)
     {
-        var company = await dbContext.Companies
+        var company = await companiesRepository.Query()
             .AsNoTracking()
             .Where(x => x.Id == id)
             .Select(x => new CompanyResponse(x.Id, x.Code, x.Name, x.TaxCode, x.Address, x.Phone, x.Email, x.IsActive))
@@ -58,6 +62,7 @@ public sealed class CompaniesController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<CompanyResponse>> CreateCompany(CreateCompanyRequest request, CancellationToken cancellationToken)
     {
         var validation = await createValidator.ValidateAsync(request, cancellationToken);
@@ -66,7 +71,7 @@ public sealed class CompaniesController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        if (await dbContext.Companies.AnyAsync(x => x.Code == request.Code, cancellationToken))
+        if (await companiesRepository.Query().AnyAsync(x => x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Company code already exists.");
             return ValidationProblem(ModelState);
@@ -82,13 +87,14 @@ public sealed class CompaniesController(
             Email = request.Email?.Trim()
         };
 
-        dbContext.Companies.Add(company);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        companiesRepository.Add(company);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return CreatedAtAction(nameof(GetCompany), new { id = company.Id }, ToResponse(company));
     }
 
     [HttpPut("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<CompanyResponse>> UpdateCompany(long id, UpdateCompanyRequest request, CancellationToken cancellationToken)
     {
         var validation = await updateValidator.ValidateAsync(request, cancellationToken);
@@ -97,13 +103,13 @@ public sealed class CompaniesController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        var company = await dbContext.Companies.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var company = await companiesRepository.GetByIdAsync(id, cancellationToken);
         if (company is null)
         {
             return NotFound();
         }
 
-        if (await dbContext.Companies.AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
+        if (await companiesRepository.Query().AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Company code already exists.");
             return ValidationProblem(ModelState);
@@ -117,22 +123,23 @@ public sealed class CompaniesController(
         company.Email = request.Email?.Trim();
         company.IsActive = request.IsActive;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Ok(ToResponse(company));
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<IActionResult> DeleteCompany(long id, CancellationToken cancellationToken)
     {
-        var company = await dbContext.Companies.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var company = await companiesRepository.GetByIdAsync(id, cancellationToken);
         if (company is null)
         {
             return NotFound();
         }
 
         company.IsDeleted = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 

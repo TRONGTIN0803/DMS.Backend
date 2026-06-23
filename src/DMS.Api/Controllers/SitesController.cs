@@ -1,17 +1,22 @@
+using DMS.Api.Auth;
 using DMS.Application.Catalog;
+using DMS.Application.Abstractions;
 using DMS.Domain.Entities;
-using DMS.Infrastructure.Persistence;
 using DMS.Shared;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
 [Route("api/v1/sites")]
 public sealed class SitesController(
-    ApplicationDbContext dbContext,
+    IRepository<Site> sitesRepository,
+    IRepository<Company> companiesRepository,
+    IUnitOfWork unitOfWork,
     IValidator<CreateSiteRequest> createValidator,
     IValidator<UpdateSiteRequest> updateValidator) : ControllerBase
 {
@@ -20,7 +25,7 @@ public sealed class SitesController(
     {
         var page = query.SafePage;
         var pageSize = query.SafePageSize;
-        IQueryable<Site> sitesQuery = dbContext.Sites.AsNoTracking().Include(x => x.Company);
+        IQueryable<Site> sitesQuery = sitesRepository.Query().AsNoTracking().Include(x => x.Company);
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -49,7 +54,7 @@ public sealed class SitesController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<SiteResponse>> GetSite(long id, CancellationToken cancellationToken)
     {
-        var site = await dbContext.Sites
+        var site = await sitesRepository.Query()
             .AsNoTracking()
             .Include(x => x.Company)
             .Where(x => x.Id == id)
@@ -60,6 +65,7 @@ public sealed class SitesController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<SiteResponse>> CreateSite(CreateSiteRequest request, CancellationToken cancellationToken)
     {
         var validation = await createValidator.ValidateAsync(request, cancellationToken);
@@ -68,13 +74,13 @@ public sealed class SitesController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        if (!await dbContext.Companies.AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
+        if (!await companiesRepository.Query().AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.CompanyId), "Company does not exist.");
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.Sites.AnyAsync(x => x.Code == request.Code, cancellationToken))
+        if (await sitesRepository.Query().AnyAsync(x => x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Site code already exists.");
             return ValidationProblem(ModelState);
@@ -88,14 +94,15 @@ public sealed class SitesController(
             Address = request.Address?.Trim()
         };
 
-        dbContext.Sites.Add(site);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        sitesRepository.Add(site);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetSite(site.Id, cancellationToken);
         return CreatedAtAction(nameof(GetSite), new { id = site.Id }, response.Value);
     }
 
     [HttpPut("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<SiteResponse>> UpdateSite(long id, UpdateSiteRequest request, CancellationToken cancellationToken)
     {
         var validation = await updateValidator.ValidateAsync(request, cancellationToken);
@@ -104,19 +111,19 @@ public sealed class SitesController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        var site = await dbContext.Sites.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var site = await sitesRepository.GetByIdAsync(id, cancellationToken);
         if (site is null)
         {
             return NotFound();
         }
 
-        if (!await dbContext.Companies.AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
+        if (!await companiesRepository.Query().AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.CompanyId), "Company does not exist.");
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.Sites.AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
+        if (await sitesRepository.Query().AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Site code already exists.");
             return ValidationProblem(ModelState);
@@ -128,23 +135,24 @@ public sealed class SitesController(
         site.Address = request.Address?.Trim();
         site.IsActive = request.IsActive;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetSite(site.Id, cancellationToken);
         return Ok(response.Value);
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<IActionResult> DeleteSite(long id, CancellationToken cancellationToken)
     {
-        var site = await dbContext.Sites.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var site = await sitesRepository.GetByIdAsync(id, cancellationToken);
         if (site is null)
         {
             return NotFound();
         }
 
         site.IsDeleted = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 }

@@ -1,17 +1,22 @@
+using DMS.Api.Auth;
 using DMS.Application.Catalog;
+using DMS.Application.Abstractions;
 using DMS.Domain.Entities;
-using DMS.Infrastructure.Persistence;
 using DMS.Shared;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
 [Route("api/v1/sales-people")]
 public sealed class SalesPeopleController(
-    ApplicationDbContext dbContext,
+    IRepository<SalesPerson> salesPeopleRepository,
+    IRepository<Company> companiesRepository,
+    IUnitOfWork unitOfWork,
     IValidator<CreateSalesPersonRequest> createValidator,
     IValidator<UpdateSalesPersonRequest> updateValidator) : ControllerBase
 {
@@ -20,7 +25,7 @@ public sealed class SalesPeopleController(
     {
         var page = query.SafePage;
         var pageSize = query.SafePageSize;
-        IQueryable<SalesPerson> salesPeopleQuery = dbContext.SalesPeople.AsNoTracking().Include(x => x.Company);
+        IQueryable<SalesPerson> salesPeopleQuery = salesPeopleRepository.Query().AsNoTracking().Include(x => x.Company);
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -49,7 +54,7 @@ public sealed class SalesPeopleController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<SalesPersonResponse>> GetSalesPerson(long id, CancellationToken cancellationToken)
     {
-        var salesPerson = await dbContext.SalesPeople
+        var salesPerson = await salesPeopleRepository.Query()
             .AsNoTracking()
             .Include(x => x.Company)
             .Where(x => x.Id == id)
@@ -60,6 +65,7 @@ public sealed class SalesPeopleController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<SalesPersonResponse>> CreateSalesPerson(CreateSalesPersonRequest request, CancellationToken cancellationToken)
     {
         var validation = await createValidator.ValidateAsync(request, cancellationToken);
@@ -68,13 +74,13 @@ public sealed class SalesPeopleController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        if (!await dbContext.Companies.AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
+        if (!await companiesRepository.Query().AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.CompanyId), "Company does not exist.");
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.SalesPeople.AnyAsync(x => x.Code == request.Code, cancellationToken))
+        if (await salesPeopleRepository.Query().AnyAsync(x => x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Sales person code already exists.");
             return ValidationProblem(ModelState);
@@ -89,14 +95,15 @@ public sealed class SalesPeopleController(
             Email = request.Email?.Trim()
         };
 
-        dbContext.SalesPeople.Add(salesPerson);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await dbContext.Entry(salesPerson).Reference(x => x.Company).LoadAsync(cancellationToken);
+        salesPeopleRepository.Add(salesPerson);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return CreatedAtAction(nameof(GetSalesPerson), new { id = salesPerson.Id }, ToResponse(salesPerson));
+        var response = await GetSalesPerson(salesPerson.Id, cancellationToken);
+        return CreatedAtAction(nameof(GetSalesPerson), new { id = salesPerson.Id }, response.Value);
     }
 
     [HttpPut("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<ActionResult<SalesPersonResponse>> UpdateSalesPerson(long id, UpdateSalesPersonRequest request, CancellationToken cancellationToken)
     {
         var validation = await updateValidator.ValidateAsync(request, cancellationToken);
@@ -105,19 +112,19 @@ public sealed class SalesPeopleController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        var salesPerson = await dbContext.SalesPeople.Include(x => x.Company).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var salesPerson = await salesPeopleRepository.GetByIdAsync(id, cancellationToken);
         if (salesPerson is null)
         {
             return NotFound();
         }
 
-        if (!await dbContext.Companies.AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
+        if (!await companiesRepository.Query().AnyAsync(x => x.Id == request.CompanyId, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.CompanyId), "Company does not exist.");
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.SalesPeople.AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
+        if (await salesPeopleRepository.Query().AnyAsync(x => x.Id != id && x.Code == request.Code, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.Code), "Sales person code already exists.");
             return ValidationProblem(ModelState);
@@ -130,26 +137,24 @@ public sealed class SalesPeopleController(
         salesPerson.Email = request.Email?.Trim();
         salesPerson.IsActive = request.IsActive;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await dbContext.Entry(salesPerson).Reference(x => x.Company).LoadAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ToResponse(salesPerson));
+        var response = await GetSalesPerson(salesPerson.Id, cancellationToken);
+        return Ok(response.Value);
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.MasterDataWrite)]
     public async Task<IActionResult> DeleteSalesPerson(long id, CancellationToken cancellationToken)
     {
-        var salesPerson = await dbContext.SalesPeople.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var salesPerson = await salesPeopleRepository.GetByIdAsync(id, cancellationToken);
         if (salesPerson is null)
         {
             return NotFound();
         }
 
         salesPerson.IsDeleted = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
-
-    private static SalesPersonResponse ToResponse(SalesPerson salesPerson) =>
-        new(salesPerson.Id, salesPerson.Code, salesPerson.Name, salesPerson.CompanyId, salesPerson.Company.Name, salesPerson.Phone, salesPerson.Email, salesPerson.IsActive);
 }

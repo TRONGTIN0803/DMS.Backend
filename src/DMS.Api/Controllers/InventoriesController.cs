@@ -1,17 +1,23 @@
+using DMS.Api.Auth;
 using DMS.Application.Catalog;
+using DMS.Application.Abstractions;
 using DMS.Domain.Entities;
-using DMS.Infrastructure.Persistence;
 using DMS.Shared;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
 [Route("api/v1/inventories")]
 public sealed class InventoriesController(
-    ApplicationDbContext dbContext,
+    IRepository<Inventory> inventoriesRepository,
+    IRepository<Site> sitesRepository,
+    IRepository<Item> itemsRepository,
+    IUnitOfWork unitOfWork,
     IValidator<CreateInventoryRequest> createValidator,
     IValidator<UpdateInventoryRequest> updateValidator) : ControllerBase
 {
@@ -20,7 +26,7 @@ public sealed class InventoriesController(
     {
         var page = query.SafePage;
         var pageSize = query.SafePageSize;
-        IQueryable<Inventory> inventoriesQuery = dbContext.Inventories.AsNoTracking().Include(x => x.Site).Include(x => x.Item);
+        IQueryable<Inventory> inventoriesQuery = inventoriesRepository.Query().AsNoTracking().Include(x => x.Site).Include(x => x.Item);
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -65,7 +71,7 @@ public sealed class InventoriesController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<InventoryResponse>> GetInventory(long id, CancellationToken cancellationToken)
     {
-        var inventory = await dbContext.Inventories
+        var inventory = await inventoriesRepository.Query()
             .AsNoTracking()
             .Include(x => x.Site)
             .Include(x => x.Item)
@@ -89,7 +95,7 @@ public sealed class InventoriesController(
     [HttpGet("by-site-item")]
     public async Task<ActionResult<InventoryResponse>> GetInventoryBySiteItem([FromQuery] long siteId, [FromQuery] long itemId, CancellationToken cancellationToken)
     {
-        var inventory = await dbContext.Inventories
+        var inventory = await inventoriesRepository.Query()
             .AsNoTracking()
             .Include(x => x.Site)
             .Include(x => x.Item)
@@ -111,6 +117,7 @@ public sealed class InventoriesController(
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.InventoryWrite)]
     public async Task<ActionResult<InventoryResponse>> CreateInventory(CreateInventoryRequest request, CancellationToken cancellationToken)
     {
         var validation = await createValidator.ValidateAsync(request, cancellationToken);
@@ -126,7 +133,7 @@ public sealed class InventoriesController(
             return ValidationProblem(ModelState);
         }
 
-        if (await dbContext.Inventories.AnyAsync(x => x.SiteId == request.SiteId && x.ItemId == request.ItemId, cancellationToken))
+        if (await inventoriesRepository.Query().AnyAsync(x => x.SiteId == request.SiteId && x.ItemId == request.ItemId, cancellationToken))
         {
             ModelState.AddModelError(nameof(request.ItemId), "Inventory already exists for this site and item.");
             return ValidationProblem(ModelState);
@@ -140,14 +147,15 @@ public sealed class InventoriesController(
             ReservedQuantity = request.ReservedQuantity
         };
 
-        dbContext.Inventories.Add(inventory);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        inventoriesRepository.Add(inventory);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetInventory(inventory.Id, cancellationToken);
         return CreatedAtAction(nameof(GetInventory), new { id = inventory.Id }, response.Value);
     }
 
     [HttpPut("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.InventoryWrite)]
     public async Task<ActionResult<InventoryResponse>> UpdateInventory(long id, UpdateInventoryRequest request, CancellationToken cancellationToken)
     {
         var validation = await updateValidator.ValidateAsync(request, cancellationToken);
@@ -156,7 +164,7 @@ public sealed class InventoriesController(
             return BadRequest(new ValidationProblemDetails(validation.ToDictionary()));
         }
 
-        var inventory = await dbContext.Inventories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var inventory = await inventoriesRepository.GetByIdAsync(id, cancellationToken);
         if (inventory is null)
         {
             return NotFound();
@@ -165,34 +173,35 @@ public sealed class InventoriesController(
         inventory.Quantity = request.Quantity;
         inventory.ReservedQuantity = request.ReservedQuantity;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = await GetInventory(inventory.Id, cancellationToken);
         return Ok(response.Value);
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Policy = AuthorizationPolicies.InventoryWrite)]
     public async Task<IActionResult> DeleteInventory(long id, CancellationToken cancellationToken)
     {
-        var inventory = await dbContext.Inventories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var inventory = await inventoriesRepository.GetByIdAsync(id, cancellationToken);
         if (inventory is null)
         {
             return NotFound();
         }
 
-        dbContext.Inventories.Remove(inventory);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        inventoriesRepository.Remove(inventory);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 
     private async Task<(string Field, string Message)?> ValidateRelationshipsAsync(long siteId, long itemId, CancellationToken cancellationToken)
     {
-        if (!await dbContext.Sites.AnyAsync(x => x.Id == siteId, cancellationToken))
+        if (!await sitesRepository.Query().AnyAsync(x => x.Id == siteId, cancellationToken))
         {
             return (nameof(siteId), "Site does not exist.");
         }
 
-        if (!await dbContext.Items.AnyAsync(x => x.Id == itemId, cancellationToken))
+        if (!await itemsRepository.Query().AnyAsync(x => x.Id == itemId, cancellationToken))
         {
             return (nameof(itemId), "Item does not exist.");
         }
