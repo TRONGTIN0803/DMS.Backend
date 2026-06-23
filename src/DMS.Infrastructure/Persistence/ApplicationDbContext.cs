@@ -23,6 +23,9 @@ public sealed class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Inventory> Inventories => Set<Inventory>();
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderDetail> SalesOrderDetails => Set<SalesOrderDetail>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
