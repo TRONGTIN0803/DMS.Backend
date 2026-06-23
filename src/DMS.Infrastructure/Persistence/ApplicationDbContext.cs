@@ -21,6 +21,8 @@ public sealed class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<Item> Items => Set<Item>();
     public DbSet<Inventory> Inventories => Set<Inventory>();
+    public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,4 +57,3 @@ public sealed class ApplicationDbContext : DbContext, IApplicationDbContext
         }
     }
 }
-
