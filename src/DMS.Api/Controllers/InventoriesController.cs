@@ -12,11 +12,13 @@ namespace DMS.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
-[Route("api/v1/inventories")]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/inventories")]
 public sealed class InventoriesController(
     IRepository<Inventory> inventoriesRepository,
     IRepository<Site> sitesRepository,
     IRepository<Item> itemsRepository,
+    IRepository<StockTransaction> stockTransactionsRepository,
     IUnitOfWork unitOfWork,
     IValidator<CreateInventoryRequest> createValidator,
     IValidator<UpdateInventoryRequest> updateValidator) : ControllerBase
@@ -114,6 +116,96 @@ public sealed class InventoriesController(
             .FirstOrDefaultAsync(cancellationToken);
 
         return inventory is null ? NotFound() : Ok(inventory);
+    }
+
+    [HttpGet("reconciliation")]
+    public async Task<ActionResult<IReadOnlyList<InventoryReconciliationResponse>>> ReconcileInventory(CancellationToken cancellationToken)
+    {
+        var ledgerQuantities = await stockTransactionsRepository.Query()
+            .AsNoTracking()
+            .GroupBy(x => new { x.SiteId, x.ItemId })
+            .Select(x => new
+            {
+                x.Key.SiteId,
+                x.Key.ItemId,
+                Quantity = x.Sum(transaction => transaction.Quantity)
+            })
+            .ToDictionaryAsync(x => (x.SiteId, x.ItemId), cancellationToken);
+
+        var inventories = await inventoriesRepository.Query()
+            .AsNoTracking()
+            .Include(x => x.Site)
+            .Include(x => x.Item)
+            .OrderBy(x => x.Site.Code)
+            .ThenBy(x => x.Item.Code)
+            .ToListAsync(cancellationToken);
+
+        var differences = inventories
+            .Select(x =>
+            {
+                var ledgerQuantity = ledgerQuantities.TryGetValue((x.SiteId, x.ItemId), out var value) ? value.Quantity : 0m;
+                return new InventoryReconciliationResponse(
+                    x.SiteId,
+                    x.Site.Code,
+                    x.ItemId,
+                    x.Item.Code,
+                    x.Quantity,
+                    ledgerQuantity,
+                    x.Quantity - ledgerQuantity);
+            })
+            .Where(x => x.Difference != 0m)
+            .ToList();
+
+        return Ok(differences);
+    }
+
+    [HttpGet("site/{siteId:long}/item/{itemId:long}/transactions")]
+    public async Task<ActionResult<PagedResult<StockTransactionResponse>>> GetInventoryTransactions(
+        long siteId,
+        long itemId,
+        [FromQuery] PagedQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (!await sitesRepository.Query().AnyAsync(x => x.Id == siteId, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        if (!await itemsRepository.Query().AnyAsync(x => x.Id == itemId, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var page = query.SafePage;
+        var pageSize = query.SafePageSize;
+        var transactionsQuery = stockTransactionsRepository.Query()
+            .AsNoTracking()
+            .Include(x => x.Site)
+            .Include(x => x.Item)
+            .Where(x => x.SiteId == siteId && x.ItemId == itemId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id);
+
+        var totalCount = await transactionsQuery.CountAsync(cancellationToken);
+        var transactions = await transactionsQuery
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => new StockTransactionResponse(
+                x.Id,
+                x.SiteId,
+                x.Site.Code,
+                x.ItemId,
+                x.Item.Code,
+                x.TransType,
+                x.Quantity,
+                x.BalanceAfter,
+                x.RefType,
+                x.RefId,
+                x.CreatedAt,
+                x.CreatedBy))
+            .ToListAsync(cancellationToken);
+
+        return Ok(new PagedResult<StockTransactionResponse>(transactions, page, pageSize, totalCount));
     }
 
     [HttpPost]

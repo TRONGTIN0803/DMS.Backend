@@ -1,5 +1,6 @@
 bin/
 obj/
+.codex-build/
 .vs/
 .vscode/
 *.user
@@ -11,4 +12,3 @@ obj/
 appsettings.Development.local.json
 TestResults/
 coverage/
-

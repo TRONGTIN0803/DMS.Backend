@@ -7,18 +7,28 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.Json;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
-[Route("api/v1/items")]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/items")]
 public sealed class ItemsController(
     IRepository<Item> itemsRepository,
     IUnitOfWork unitOfWork,
     IValidator<CreateItemRequest> createValidator,
-    IValidator<UpdateItemRequest> updateValidator) : ControllerBase
+    IValidator<UpdateItemRequest> updateValidator,
+    IDistributedCache cache) : ControllerBase
 {
+    private static readonly DistributedCacheEntryOptions CacheOptions = new()
+    {
+        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
+    };
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     [HttpGet]
     public async Task<ActionResult<PagedResult<ItemResponse>>> GetItems([FromQuery] PagedQuery query, CancellationToken cancellationToken)
     {
@@ -56,13 +66,26 @@ public sealed class ItemsController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<ItemResponse>> GetItem(long id, CancellationToken cancellationToken)
     {
+        var cacheKey = MasterDataCacheKeys.Item(id);
+        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
+        if (cached is not null)
+        {
+            return Ok(JsonSerializer.Deserialize<ItemResponse>(cached, SerializerOptions));
+        }
+
         var item = await itemsRepository.Query()
             .AsNoTracking()
             .Where(x => x.Id == id)
             .Select(x => new ItemResponse(x.Id, x.Code, x.Name, x.Unit, x.Barcode, x.Price, x.VatRate, x.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
-        return item is null ? NotFound() : Ok(item);
+        if (item is null)
+        {
+            return NotFound();
+        }
+
+        await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(item, SerializerOptions), CacheOptions, cancellationToken);
+        return Ok(item);
     }
 
     [HttpPost]
@@ -96,6 +119,7 @@ public sealed class ItemsController(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var response = new ItemResponse(item.Id, item.Code, item.Name, item.Unit, item.Barcode, item.Price, item.VatRate, item.IsActive);
+        await cache.SetStringAsync(MasterDataCacheKeys.Item(item.Id), JsonSerializer.Serialize(response, SerializerOptions), CacheOptions, cancellationToken);
         return CreatedAtAction(nameof(GetItem), new { id = item.Id }, response);
     }
 
@@ -132,7 +156,11 @@ public sealed class ItemsController(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(new ItemResponse(item.Id, item.Code, item.Name, item.Unit, item.Barcode, item.Price, item.VatRate, item.IsActive));
+        var response = new ItemResponse(item.Id, item.Code, item.Name, item.Unit, item.Barcode, item.Price, item.VatRate, item.IsActive);
+        await cache.RemoveAsync(MasterDataCacheKeys.Item(id), cancellationToken);
+        await cache.SetStringAsync(MasterDataCacheKeys.Item(id), JsonSerializer.Serialize(response, SerializerOptions), CacheOptions, cancellationToken);
+
+        return Ok(response);
     }
 
     [HttpDelete("{id:long}")]
@@ -147,6 +175,7 @@ public sealed class ItemsController(
 
         item.IsDeleted = true;
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        await cache.RemoveAsync(MasterDataCacheKeys.Item(id), cancellationToken);
         return NoContent();
     }
 }

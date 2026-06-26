@@ -115,3 +115,22 @@ public sealed class UpdateInventoryRequestValidator : AbstractValidator<UpdateIn
         RuleFor(x => x.ReservedQuantity).LessThanOrEqualTo(x => x.Quantity);
     }
 }
+
+public sealed class CreateInventoryBatchRequestValidator : AbstractValidator<CreateInventoryBatchRequest>
+{
+    public CreateInventoryBatchRequestValidator()
+    {
+        RuleFor(x => x.SiteId).GreaterThan(0);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).SetValidator(new CreateInventoryBatchLineRequestValidator());
+    }
+}
+
+public sealed class CreateInventoryBatchLineRequestValidator : AbstractValidator<CreateInventoryBatchLineRequest>
+{
+    public CreateInventoryBatchLineRequestValidator()
+    {
+        RuleFor(x => x.ItemId).GreaterThan(0);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}

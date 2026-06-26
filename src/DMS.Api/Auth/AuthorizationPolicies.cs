@@ -8,6 +8,7 @@ public static class AuthorizationPolicies
     public const string MasterDataRead = nameof(MasterDataRead);
     public const string MasterDataWrite = nameof(MasterDataWrite);
     public const string InventoryWrite = nameof(InventoryWrite);
+    public const string AdminOnly = nameof(AdminOnly);
 
     public static void AddDmsPolicies(AuthorizationOptions options)
     {
@@ -19,5 +20,8 @@ public static class AuthorizationPolicies
 
         options.AddPolicy(InventoryWrite, policy =>
             policy.RequireRole(UserRoles.Admin, UserRoles.Warehouse));
+
+        options.AddPolicy(AdminOnly, policy =>
+            policy.RequireRole(UserRoles.Admin));
     }
 }

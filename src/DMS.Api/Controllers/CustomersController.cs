@@ -7,20 +7,30 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.Json;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
-[Route("api/v1/customers")]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/customers")]
 public sealed class CustomersController(
     IRepository<Customer> customersRepository,
     IRepository<Company> companiesRepository,
     IRepository<SalesPerson> salesPeopleRepository,
     IUnitOfWork unitOfWork,
     IValidator<CreateCustomerRequest> createValidator,
-    IValidator<UpdateCustomerRequest> updateValidator) : ControllerBase
+    IValidator<UpdateCustomerRequest> updateValidator,
+    IDistributedCache cache) : ControllerBase
 {
+    private static readonly DistributedCacheEntryOptions CacheOptions = new()
+    {
+        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
+    };
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     [HttpGet]
     public async Task<ActionResult<PagedResult<CustomerResponse>>> GetCustomers([FromQuery] PagedQuery query, CancellationToken cancellationToken)
     {
@@ -66,6 +76,13 @@ public sealed class CustomersController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<CustomerResponse>> GetCustomer(long id, CancellationToken cancellationToken)
     {
+        var cacheKey = MasterDataCacheKeys.Customer(id);
+        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
+        if (cached is not null)
+        {
+            return Ok(JsonSerializer.Deserialize<CustomerResponse>(cached, SerializerOptions));
+        }
+
         var customer = await customersRepository.Query()
             .AsNoTracking()
             .Include(x => x.Company)
@@ -85,7 +102,13 @@ public sealed class CustomersController(
                 x.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
-        return customer is null ? NotFound() : Ok(customer);
+        if (customer is null)
+        {
+            return NotFound();
+        }
+
+        await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(customer, SerializerOptions), CacheOptions, cancellationToken);
+        return Ok(customer);
     }
 
     [HttpPost]
@@ -125,6 +148,7 @@ public sealed class CustomersController(
         customersRepository.Add(customer);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await cache.RemoveAsync(MasterDataCacheKeys.Customer(customer.Id), cancellationToken);
         var response = await GetCustomer(customer.Id, cancellationToken);
         return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, response.Value);
     }
@@ -169,6 +193,7 @@ public sealed class CustomersController(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await cache.RemoveAsync(MasterDataCacheKeys.Customer(id), cancellationToken);
         var response = await GetCustomer(customer.Id, cancellationToken);
         return Ok(response.Value);
     }
@@ -185,6 +210,7 @@ public sealed class CustomersController(
 
         customer.IsDeleted = true;
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        await cache.RemoveAsync(MasterDataCacheKeys.Customer(id), cancellationToken);
         return NoContent();
     }
 

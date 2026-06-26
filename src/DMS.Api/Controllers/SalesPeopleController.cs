@@ -12,7 +12,8 @@ namespace DMS.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
-[Route("api/v1/sales-people")]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/sales-people")]
 public sealed class SalesPeopleController(
     IRepository<SalesPerson> salesPeopleRepository,
     IRepository<Company> companiesRepository,

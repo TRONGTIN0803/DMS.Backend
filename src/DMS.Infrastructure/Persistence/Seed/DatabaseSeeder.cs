@@ -71,7 +71,39 @@ public static class DatabaseSeeder
             ReservedQuantity = 0m
         };
 
-        dbContext.AddRange(company, salesPerson, site, item, customer, inventory);
+        var openingBatch = new Batch
+        {
+            BatchNo = "OPEN-INIT-001",
+            Type = BatchType.In,
+            Site = site,
+            Status = BatchStatus.Approved,
+            RefType = "Opening",
+            RefId = 0,
+            Details =
+            {
+                new BatchDetail
+                {
+                    Item = item,
+                    Quantity = 100m
+                }
+            }
+        };
+
+        dbContext.AddRange(company, salesPerson, site, item, customer, inventory, openingBatch);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        dbContext.StockTransactions.Add(new StockTransaction
+        {
+            SiteId = site.Id,
+            ItemId = item.Id,
+            TransType = StockTransactionType.In,
+            Quantity = 100m,
+            BalanceAfter = 100m,
+            RefType = "Batch",
+            RefId = openingBatch.Id,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

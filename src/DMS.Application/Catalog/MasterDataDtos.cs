@@ -129,3 +129,52 @@ public sealed record CreateInventoryRequest(
 public sealed record UpdateInventoryRequest(
     decimal Quantity,
     decimal ReservedQuantity);
+
+public sealed record CreateInventoryBatchRequest(
+    long SiteId,
+    IReadOnlyList<CreateInventoryBatchLineRequest> Lines);
+
+public sealed record CreateInventoryBatchLineRequest(
+    long ItemId,
+    decimal Quantity);
+
+public sealed record InventoryBatchResponse(
+    long Id,
+    string BatchNo,
+    BatchType Type,
+    long SiteId,
+    string SiteCode,
+    BatchStatus Status,
+    string RefType,
+    long RefId,
+    IReadOnlyList<InventoryBatchLineResponse> Lines);
+
+public sealed record InventoryBatchLineResponse(
+    long Id,
+    long ItemId,
+    string ItemCode,
+    string ItemName,
+    decimal Quantity);
+
+public sealed record StockTransactionResponse(
+    long Id,
+    long SiteId,
+    string SiteCode,
+    long ItemId,
+    string ItemCode,
+    StockTransactionType TransType,
+    decimal Quantity,
+    decimal BalanceAfter,
+    string RefType,
+    long RefId,
+    DateTimeOffset CreatedAt,
+    string? CreatedBy);
+
+public sealed record InventoryReconciliationResponse(
+    long SiteId,
+    string SiteCode,
+    long ItemId,
+    string ItemCode,
+    decimal InventoryQuantity,
+    decimal LedgerQuantity,
+    decimal Difference);

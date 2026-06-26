@@ -1,4 +1,5 @@
 using FluentValidation;
+using DMS.Application.Catalog;
 using DMS.Application.Orders;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +11,7 @@ public static class DependencyInjection
     {
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
         services.AddScoped<ISalesOrderService, SalesOrderService>();
+        services.AddScoped<IInventoryBatchService, InventoryBatchService>();
         return services;
     }
 }

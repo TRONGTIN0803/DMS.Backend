@@ -7,18 +7,28 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.Json;
 
 namespace DMS.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.MasterDataRead)]
-[Route("api/v1/companies")]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/companies")]
 public sealed class CompaniesController(
     IRepository<Company> companiesRepository,
     IUnitOfWork unitOfWork,
     IValidator<CreateCompanyRequest> createValidator,
-    IValidator<UpdateCompanyRequest> updateValidator) : ControllerBase
+    IValidator<UpdateCompanyRequest> updateValidator,
+    IDistributedCache cache) : ControllerBase
 {
+    private static readonly DistributedCacheEntryOptions CacheOptions = new()
+    {
+        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
+    };
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     [HttpGet]
     public async Task<ActionResult<PagedResult<CompanyResponse>>> GetCompanies([FromQuery] PagedQuery query, CancellationToken cancellationToken)
     {
@@ -53,12 +63,25 @@ public sealed class CompaniesController(
     [HttpGet("{id:long}")]
     public async Task<ActionResult<CompanyResponse>> GetCompany(long id, CancellationToken cancellationToken)
     {
+        var cacheKey = MasterDataCacheKeys.Company(id);
+        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
+        if (cached is not null)
+        {
+            return Ok(JsonSerializer.Deserialize<CompanyResponse>(cached, SerializerOptions));
+        }
+
         var company = await companiesRepository.Query()
             .AsNoTracking()
             .Where(x => x.Id == id)
             .Select(x => new CompanyResponse(x.Id, x.Code, x.Name, x.TaxCode, x.Address, x.Phone, x.Email, x.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
-        return company is null ? NotFound() : Ok(company);
+        if (company is null)
+        {
+            return NotFound();
+        }
+
+        await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(company, SerializerOptions), CacheOptions, cancellationToken);
+        return Ok(company);
     }
 
     [HttpPost]
@@ -90,7 +113,9 @@ public sealed class CompaniesController(
         companiesRepository.Add(company);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return CreatedAtAction(nameof(GetCompany), new { id = company.Id }, ToResponse(company));
+        var response = ToResponse(company);
+        await cache.SetStringAsync(MasterDataCacheKeys.Company(company.Id), JsonSerializer.Serialize(response, SerializerOptions), CacheOptions, cancellationToken);
+        return CreatedAtAction(nameof(GetCompany), new { id = company.Id }, response);
     }
 
     [HttpPut("{id:long}")]
@@ -125,7 +150,11 @@ public sealed class CompaniesController(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Ok(ToResponse(company));
+        var response = ToResponse(company);
+        await cache.RemoveAsync(MasterDataCacheKeys.Company(id), cancellationToken);
+        await cache.SetStringAsync(MasterDataCacheKeys.Company(id), JsonSerializer.Serialize(response, SerializerOptions), CacheOptions, cancellationToken);
+
+        return Ok(response);
     }
 
     [HttpDelete("{id:long}")]
@@ -140,6 +169,7 @@ public sealed class CompaniesController(
 
         company.IsDeleted = true;
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        await cache.RemoveAsync(MasterDataCacheKeys.Company(id), cancellationToken);
         return NoContent();
     }
 
