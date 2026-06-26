@@ -484,6 +484,7 @@ public sealed class ApiIntegrationTests : IAsyncLifetime
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:DefaultConnection"] = connectionString,
+                    ["Database:MigrateOnStartup"] = "false",
                     ["Database:SeedOnStartup"] = "false",
                     ["BackgroundJobs:Enabled"] = "false",
                     ["Jwt:Issuer"] = "DMS.Api",

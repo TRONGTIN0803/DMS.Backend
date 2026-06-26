@@ -18,8 +18,19 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text;
 using System.Threading.RateLimiting;
+using System.Web;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var defaultConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var databaseUrl = builder.Configuration["DATABASE_URL"];
+if (string.IsNullOrWhiteSpace(defaultConnectionString) && !string.IsNullOrWhiteSpace(databaseUrl))
+{
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["ConnectionStrings:DefaultConnection"] = ConvertDatabaseUrlToNpgsqlConnectionString(databaseUrl)
+    });
+}
 
 builder.Host.UseSerilog((context, configuration) =>
 {
@@ -197,16 +208,45 @@ app.MapControllers();
 app.MapHealthChecks("/api/health");
 app.MapHealthChecks("/api/health/ready");
 
-if (app.Environment.IsDevelopment() && app.Configuration.GetValue("Database:SeedOnStartup", true))
+var migrateOnStartup = app.Configuration.GetValue("Database:MigrateOnStartup", app.Environment.IsDevelopment());
+var seedOnStartup = app.Configuration.GetValue("Database:SeedOnStartup", app.Environment.IsDevelopment());
+if (migrateOnStartup || seedOnStartup)
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await EnsureExistingDevSchemaIsTrackedAsync(dbContext);
-    await dbContext.Database.MigrateAsync();
-    await DatabaseSeeder.SeedAsync(dbContext);
+
+    if (migrateOnStartup)
+    {
+        await dbContext.Database.MigrateAsync();
+    }
+
+    if (seedOnStartup)
+    {
+        await DatabaseSeeder.SeedAsync(dbContext);
+    }
 }
 
 app.Run();
+
+static string ConvertDatabaseUrlToNpgsqlConnectionString(string databaseUrl)
+{
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var username = HttpUtility.UrlDecode(userInfo.ElementAtOrDefault(0) ?? string.Empty);
+    var password = HttpUtility.UrlDecode(userInfo.ElementAtOrDefault(1) ?? string.Empty);
+    var database = uri.AbsolutePath.TrimStart('/');
+
+    return new Npgsql.NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = database,
+        Username = username,
+        Password = password,
+        SslMode = Npgsql.SslMode.Require
+    }.ConnectionString;
+}
 
 static async Task EnsureExistingDevSchemaIsTrackedAsync(ApplicationDbContext dbContext)
 {
